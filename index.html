@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Fluid Simulator</title>
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <style>
+      * {
+        user-select: none;
+      }
+
+      html, body {
+        overflow: hidden;
+      }
+
+      body {
+        margin: 0;
+        position: fixed;
+        width: 100%;
+        height: 100%;
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="glCanvas"></canvas>
+    <script src="./gl-matrix-min.js"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>
