@@ -11,7 +11,7 @@ let config = {
   VELOCITY_DISSIPATION: 0.98,
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
-  CURL: 30,
+  CONFINEMENT: 30,
   SPLAT_RADIUS: 0.5,
   SHADING: true,
 };
@@ -231,6 +231,15 @@ function initFramebuffers() {
     texType,
     gl.NEAREST,
   );
+  curl = createFBO(
+    5,
+    simWidth,
+    simHeight,
+    r.internalFormat,
+    r.format,
+    texType,
+    gl.NEAREST,
+  );
 }
 
 function getResolution (resolution) {
@@ -371,16 +380,18 @@ let dyeHeight;
 let density;
 let velocity;
 let divergence;
-// let curl;
+let curl;
 let pressure;
 
-let clearProgram;
-let displayProgram;
-let splatProgram;
 let advectionProgram;
+let clearProgram;
+let curlProgram;
+let displayProgram;
 let divergenceProgram;
 let pressureIterationProgram;
 let projectionProgram;
+let splatProgram;
+let vorticityConfinementProgram;
 
 /*
 Update the programs by delta time.
@@ -402,16 +413,23 @@ function step (dt) {
   blit(velocity.write.fbo);
   velocity.swap();
 
-  // Advect density (color) through the velocity field.
-  gl.viewport(0, 0, dyeWidth, dyeHeight);
-  if (!ext.supportLinearFiltering) {
-    gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, 1.0 / dyeWidth, 1.0 / dyeHeight);
-  }
-  gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.texId);
-  gl.uniform1i(advectionProgram.uniforms.uSource, density.read.texId);
-  gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
-  blit(density.write.fbo);
-  density.swap();
+
+
+  // Do vorticity confinement on the velocity field.
+  // First, compute curl of the velocity.
+  curlProgram.bind();
+  gl.uniform2f(curlProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.texId);
+  blit(curl.fbo);
+  // Confine vortices.
+  vorticityConfinementProgram.bind();
+  gl.uniform2f(vorticityConfinementProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1i(vorticityConfinementProgram.uniforms.uVelocity, velocity.read.texId);
+  gl.uniform1i(vorticityConfinementProgram.uniforms.uCurl, curl.texId);
+  gl.uniform1f(vorticityConfinementProgram.uniforms.confinement, config.CONFINEMENT);
+  gl.uniform1f(vorticityConfinementProgram.uniforms.dt, dt);
+  blit(velocity.write.fbo);
+  velocity.swap();
 
   // Projection step.
   gl.viewport(0, 0, simWidth, simHeight);
@@ -439,6 +457,18 @@ function step (dt) {
   gl.uniform1i(projectionProgram.uniforms.uVelocity, velocity.read.texId);
   blit(velocity.write.fbo);
   velocity.swap();
+
+  // Advect density (color) through the velocity field.
+  advectionProgram.bind();
+  gl.viewport(0, 0, dyeWidth, dyeHeight);
+  if (!ext.supportLinearFiltering) {
+    gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, 1.0 / dyeWidth, 1.0 / dyeHeight);
+  }
+  gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.texId);
+  gl.uniform1i(advectionProgram.uniforms.uSource, density.read.texId);
+  gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
+  blit(density.write.fbo);
+  density.swap();
 }
 
 function main () {
@@ -457,6 +487,10 @@ function main () {
     },
     clearShader: {
       url: "./shaders/clearShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    curlShader: {
+      url: "./shaders/curlShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
     displayShader: {
@@ -479,6 +513,10 @@ function main () {
       url: "./shaders/splatShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
+    vorticityConfinementShader: {
+      url: "./shaders/vorticityConfinementShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
   };
   let shaders = {};
   let shaderFetches = Object.keys(shaderSources).map((shaderName) => {
@@ -488,17 +526,19 @@ function main () {
   });
   Promise.all(shaderFetches).then(_ => {
     console.log(shaders);
-    clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
-    displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
-    splatProgram              = new GLProgram(shaders.baseVertexShader, shaders.splatShader);
     advectionProgram =
       new GLProgram(
         shaders.baseVertexShader,
         ext.supportLinearFiltering ? shaders.advectionShader : shaders.advectionManualFilteringShader
       );
+    clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
+    curlProgram               = new GLProgram(shaders.baseVertexShader, shaders.curlShader);
+    displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
     divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
     pressureIterationProgram  = new GLProgram(shaders.baseVertexShader, shaders.pressureIterationShader);
     projectionProgram         = new GLProgram(shaders.baseVertexShader, shaders.projectionShader);
+    splatProgram              = new GLProgram(shaders.baseVertexShader, shaders.splatShader);
+    vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
 
     initFramebuffers();
     // multipleSplats(parseInt(Math.random() * 20) + 5);
