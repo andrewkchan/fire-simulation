@@ -5,15 +5,18 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let config = {
-  SIM_RESOLUTION: 128,
+  BUOYANCY: 0.1,
+  BURN_TEMPERATURE: 1700,
+  CONFINEMENT: 15,
+  COOLING: 3000,
   DYE_RESOLUTION: 512,
-  DENSITY_DISSIPATION: 0.97,
-  VELOCITY_DISSIPATION: 0.98,
+  FUEL_DISSIPATION: 0.9,
+  DENSITY_DISSIPATION: 0.99,
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
-  CONFINEMENT: 30,
+  SIM_RESOLUTION: 128,
   SPLAT_RADIUS: 0.5,
-  SHADING: true,
+  VELOCITY_DISSIPATION: 0.98,
 };
 
 let pointers = [new pointerPrototype()];
@@ -195,6 +198,15 @@ function initFramebuffers() {
   const rg = ext.formatRG;
   const r = ext.formatR;
 
+  curl = createFBO(
+    5,
+    simWidth,
+    simHeight,
+    r.internalFormat,
+    r.format,
+    texType,
+    gl.NEAREST,
+  );
   density = createDoubleFBO(
     2,
     dyeWidth,
@@ -204,17 +216,17 @@ function initFramebuffers() {
     texType,
     ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
-  velocity = createDoubleFBO(
-    0,
-    simWidth,
-    simHeight,
-    rg.internalFormat,
-    rg.format,
-    texType,
-    ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
-  );
   divergence = createFBO(
     4,
+    simWidth,
+    simHeight,
+    r.internalFormat,
+    r.format,
+    texType,
+    gl.NEAREST,
+  );
+  fuel = createDoubleFBO(
+    10,
     simWidth,
     simHeight,
     r.internalFormat,
@@ -231,14 +243,23 @@ function initFramebuffers() {
     texType,
     gl.NEAREST,
   );
-  curl = createFBO(
-    5,
+  temperature = createDoubleFBO(
+    8,
     simWidth,
     simHeight,
     r.internalFormat,
     r.format,
     texType,
     gl.NEAREST,
+  );
+  velocity = createDoubleFBO(
+    0,
+    simWidth,
+    simHeight,
+    rg.internalFormat,
+    rg.format,
+    texType,
+    ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
 }
 
@@ -352,6 +373,11 @@ function splat (x, y, dx, dy, color) {
   blit(velocity.write.fbo);
   velocity.swap();
 
+  gl.uniform1i(splatProgram.uniforms.uTarget, fuel.read.texId);
+  gl.uniform3f(splatProgram.uniforms.color, 10.0, 0.0, 0.0);
+  blit(fuel.write.fbo);
+  fuel.swap();
+
   gl.viewport(0, 0, dyeWidth, dyeHeight);
   gl.uniform1i(splatProgram.uniforms.uTarget, density.read.texId);
   gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
@@ -377,14 +403,19 @@ let simWidth;
 let simHeight;
 let dyeWidth;
 let dyeHeight;
-let density;
-let velocity;
-let divergence;
+
 let curl;
+let density;
+let divergence;
+let fuel;
 let pressure;
+let temperature;
+let velocity;
 
 let advectionProgram;
+let buoyancyProgram;
 let clearProgram;
+let combustionProgram;
 let curlProgram;
 let displayProgram;
 let divergenceProgram;
@@ -398,6 +429,18 @@ Update the programs by delta time.
 */
 function step (dt) {
   gl.viewport(0, 0, simWidth, simHeight);
+
+  // Combustion step.
+  // Burn fuel and cool temperature.
+  combustionProgram.bind();
+  gl.uniform2f(combustionProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1i(combustionProgram.uniforms.uFuel, fuel.read.texId);
+  gl.uniform1i(combustionProgram.uniforms.uTemperature, temperature.read.texId);
+  gl.uniform1f(combustionProgram.uniforms.burnTemperature, config.BURN_TEMPERATURE);
+  gl.uniform1f(combustionProgram.uniforms.cooling, config.COOLING);
+  gl.uniform1f(combustionProgram.uniforms.dt, dt);
+  blit(temperature.write.fbo);
+  temperature.swap();
 
   // Advection step.
   // Advect velocity through the velocity field.
@@ -413,8 +456,6 @@ function step (dt) {
   blit(velocity.write.fbo);
   velocity.swap();
 
-
-
   // Do vorticity confinement on the velocity field.
   // First, compute curl of the velocity.
   curlProgram.bind();
@@ -428,6 +469,16 @@ function step (dt) {
   gl.uniform1i(vorticityConfinementProgram.uniforms.uCurl, curl.texId);
   gl.uniform1f(vorticityConfinementProgram.uniforms.confinement, config.CONFINEMENT);
   gl.uniform1f(vorticityConfinementProgram.uniforms.dt, dt);
+  blit(velocity.write.fbo);
+  velocity.swap();
+
+  // Add thermal buoyancy to velocity.
+  buoyancyProgram.bind();
+  gl.uniform2f(buoyancyProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1i(buoyancyProgram.uniforms.uVelocity, velocity.read.texId);
+  gl.uniform1i(buoyancyProgram.uniforms.uTemperature, temperature.read.texId);
+  gl.uniform1f(buoyancyProgram.uniforms.buoyancy, config.BUOYANCY);
+  gl.uniform1f(buoyancyProgram.uniforms.dt, dt);
   blit(velocity.write.fbo);
   velocity.swap();
 
@@ -469,6 +520,20 @@ function step (dt) {
   gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
   blit(density.write.fbo);
   density.swap();
+  // Advect temperature.
+  gl.viewport(0, 0, simWidth, simHeight);
+  if (!ext.supportLinearFiltering) {
+    gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, 1.0 / simWidth, 1.0 / simHeight);
+  }
+  gl.uniform1i(advectionProgram.uniforms.uSource, temperature.read.texId);
+  gl.uniform1f(advectionProgram.uniforms.dissipation, 1.0);
+  blit(temperature.write.fbo);
+  temperature.swap();
+  // Advect fuel.
+  gl.uniform1i(advectionProgram.uniforms.uSource, fuel.read.texId);
+  gl.uniform1f(advectionProgram.uniforms.dissipation, config.FUEL_DISSIPATION);
+  blit(fuel.write.fbo);
+  fuel.swap();
 }
 
 function main () {
@@ -485,8 +550,16 @@ function main () {
       url: "./shaders/baseVertexShader.glsl",
       type: gl.VERTEX_SHADER,
     },
+    buoyancyShader: {
+      url: "./shaders/buoyancyShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
     clearShader: {
       url: "./shaders/clearShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    combustionShader: {
+      url: "./shaders/combustionShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
     curlShader: {
@@ -531,7 +604,9 @@ function main () {
         shaders.baseVertexShader,
         ext.supportLinearFiltering ? shaders.advectionShader : shaders.advectionManualFilteringShader
       );
+    buoyancyProgram           = new GLProgram(shaders.baseVertexShader, shaders.buoyancyShader);
     clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
+    combustionProgram         = new GLProgram(shaders.baseVertexShader, shaders.combustionShader);
     curlProgram               = new GLProgram(shaders.baseVertexShader, shaders.curlShader);
     displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
     divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
