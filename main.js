@@ -5,16 +5,16 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let config = {
-  BUOYANCY: 0.1,
-  BURN_TEMPERATURE: 1700,
-  CONFINEMENT: 15,
+  BUOYANCY: 0.15,
+  BURN_TEMPERATURE: 3500,
+  CONFINEMENT: 30,
   COOLING: 3000,
   DYE_RESOLUTION: 512,
   FUEL_DISSIPATION: 0.9,
   DENSITY_DISSIPATION: 0.99,
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
-  SIM_RESOLUTION: 128,
+  SIM_RESOLUTION: 256,
   SPLAT_RADIUS: 0.5,
   VELOCITY_DISSIPATION: 0.98,
 };
@@ -232,7 +232,7 @@ function initFramebuffers() {
     r.internalFormat,
     r.format,
     texType,
-    gl.NEAREST,
+    ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
   pressure = createDoubleFBO(
     6,
@@ -250,7 +250,7 @@ function initFramebuffers() {
     r.internalFormat,
     r.format,
     texType,
-    gl.NEAREST,
+    ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
   velocity = createDoubleFBO(
     0,
@@ -357,8 +357,21 @@ function render () {
 
   gl.viewport(0, 0, width, height);
 
-  displayProgram.bind();
-  gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
+  // displayProgram.bind();
+  // gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
+  // debugFloatProgram.bind();
+  // gl.uniform1i(debugFloatProgram.uniforms.uTexture, temperature.read.texId);
+  // gl.uniform1f(debugFloatProgram.uniforms.scalar, 0.001);
+  // debugFireProgram.bind();
+  // gl.uniform1i(debugFireProgram.uniforms.uFuel, fuel.read.texId);
+  // gl.uniform1i(debugFireProgram.uniforms.uTemperature, temperature.read.texId);
+  // gl.uniform1f(debugFireProgram.uniforms.temperatureScalar, 0.001);
+  // gl.uniform1f(debugFireProgram.uniforms.fuelScalar, 1.0);
+
+  displayFireProgram.bind();
+  gl.uniform1i(displayFireProgram.uniforms.uDensity, density.read.texId);
+  gl.uniform1i(displayFireProgram.uniforms.uTemperature, temperature.read.texId);
+
   blit(null);
 }
 
@@ -370,17 +383,22 @@ function splat (x, y, dx, dy, color) {
   gl.uniform2f(splatProgram.uniforms.point, x / canvas.width, 1.0 - y / canvas.height);
   gl.uniform3f(splatProgram.uniforms.color, dx, -dy, 1.0);
   gl.uniform1f(splatProgram.uniforms.radius, config.SPLAT_RADIUS / 100.0);
+  gl.uniform1f(splatProgram.uniforms.useMax, false);
   blit(velocity.write.fbo);
   velocity.swap();
 
   gl.uniform1i(splatProgram.uniforms.uTarget, fuel.read.texId);
-  gl.uniform3f(splatProgram.uniforms.color, 10.0, 0.0, 0.0);
+  gl.uniform3f(splatProgram.uniforms.color, 1.0, 0.0, 0.0);
+  gl.uniform1f(splatProgram.uniforms.radius, config.SPLAT_RADIUS / 100.0);
+  gl.uniform1f(splatProgram.uniforms.useMax, true);
   blit(fuel.write.fbo);
   fuel.swap();
 
   gl.viewport(0, 0, dyeWidth, dyeHeight);
   gl.uniform1i(splatProgram.uniforms.uTarget, density.read.texId);
   gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+  gl.uniform1f(splatProgram.uniforms.radius, config.SPLAT_RADIUS / 100.0);
+  gl.uniform1f(splatProgram.uniforms.useMax, true);
   blit(density.write.fbo);
   density.swap();
 }
@@ -417,7 +435,10 @@ let buoyancyProgram;
 let clearProgram;
 let combustionProgram;
 let curlProgram;
+let debugFireProgram;
+let debugFloatProgram;
 let displayProgram;
+let displayFireProgram;
 let divergenceProgram;
 let pressureIterationProgram;
 let projectionProgram;
@@ -566,8 +587,20 @@ function main () {
       url: "./shaders/curlShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
+    debugFireShader: {
+      url: "./shaders/debugFireShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    debugFloatShader: {
+      url: "./shaders/debugFloatShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
     displayShader: {
       url: "./shaders/displayShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    displayFireShader: {
+      url: "./shaders/displayFireShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
     divergenceShader: {
@@ -608,7 +641,10 @@ function main () {
     clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
     combustionProgram         = new GLProgram(shaders.baseVertexShader, shaders.combustionShader);
     curlProgram               = new GLProgram(shaders.baseVertexShader, shaders.curlShader);
+    debugFireProgram          = new GLProgram(shaders.baseVertexShader, shaders.debugFireShader);
+    debugFloatProgram         = new GLProgram(shaders.baseVertexShader, shaders.debugFloatShader);
     displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
+    displayFireProgram        = new GLProgram(shaders.baseVertexShader, shaders.displayFireShader);
     divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
     pressureIterationProgram  = new GLProgram(shaders.baseVertexShader, shaders.pressureIterationShader);
     projectionProgram         = new GLProgram(shaders.baseVertexShader, shaders.projectionShader);
