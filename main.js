@@ -5,12 +5,13 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let config = {
-  BUOYANCY: 0.15,
-  BURN_TEMPERATURE: 3500,
+  BUOYANCY: 0.2,
+  BURN_TEMPERATURE: 1700,
   CONFINEMENT: 30,
   COOLING: 3000,
+  DISPLAY_MODE: 0,
   DYE_RESOLUTION: 512,
-  FUEL_DISSIPATION: 0.9,
+  FUEL_DISSIPATION: 0.92,
   DENSITY_DISSIPATION: 0.99,
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
@@ -19,8 +20,25 @@ let config = {
   VELOCITY_DISSIPATION: 0.98,
 };
 
+let DISPLAY_MODES = ["Normal", "DebugFire", "DebugTemperature", "DebugFuel", "DebugPressure", "DebugDensity"];
+
+class FireSource {
+  constructor (x, y, dx, dy) {
+    this.x = x;
+    this.y = y;
+    this.dx = dx;
+    this.dy = dy;
+  }
+
+  emitFire () {
+    splat(this.x, this.y, this.dx, this.dy, { r: 0.0, g: 0.0, b: 0.0 });
+  }
+}
+
 let pointers = [new pointerPrototype()];
-let splatStack = [];
+let fireSources = [];
+// fireSources.push(new FireSource(canvas.clientWidth / 2, canvas.clientHeight - 50, 0, -1));
+// fireSources.push(new FireSource(50, canvas.clientHeight / 2, 10, 10));
 
 function getWebGLContext (canvas) {
   const params = {
@@ -330,9 +348,16 @@ function update () {
 }
 
 function input () {
-  if (splatStack.length > 0) {
-    multipleSplats(splatStack.pop());
-  }
+  fireSources.forEach(fs => fs.emitFire());
+  // bottom row fire
+  gl.viewport(0, 0, simWidth, simHeight);
+  rowProgram.bind();
+  gl.uniform2f(rowProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1f(rowProgram.uniforms.y, 10.0);
+  gl.uniform1i(rowProgram.uniforms.uTarget, fuel.read.texId);
+  gl.uniform1f(rowProgram.uniforms.useMax, true);
+  blit(fuel.write.fbo);
+  fuel.swap();
 
   for (let i = 0; i < pointers.length; i++) {
     const pointer = pointers[i];
@@ -357,22 +382,50 @@ function render () {
 
   gl.viewport(0, 0, width, height);
 
-  // displayProgram.bind();
-  // gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
-  // debugFloatProgram.bind();
-  // gl.uniform1i(debugFloatProgram.uniforms.uTexture, temperature.read.texId);
-  // gl.uniform1f(debugFloatProgram.uniforms.scalar, 0.001);
-  // debugFireProgram.bind();
-  // gl.uniform1i(debugFireProgram.uniforms.uFuel, fuel.read.texId);
-  // gl.uniform1i(debugFireProgram.uniforms.uTemperature, temperature.read.texId);
-  // gl.uniform1f(debugFireProgram.uniforms.temperatureScalar, 0.001);
-  // gl.uniform1f(debugFireProgram.uniforms.fuelScalar, 1.0);
-
-  displayFireProgram.bind();
-  gl.uniform1i(displayFireProgram.uniforms.uDensity, density.read.texId);
-  gl.uniform1i(displayFireProgram.uniforms.uTemperature, temperature.read.texId);
-
+  switch(DISPLAY_MODES[config.DISPLAY_MODE]) {
+    case "Normal": {
+      displayFireProgram.bind();
+      gl.uniform1i(displayFireProgram.uniforms.uDensity, density.read.texId);
+      gl.uniform1i(displayFireProgram.uniforms.uTemperature, temperature.read.texId);
+      gl.uniform1i(displayFireProgram.uniforms.uFuel, fuel.read.texId);
+      gl.uniform1f(displayFireProgram.uniforms.burnTemperature, config.BURN_TEMPERATURE);
+      break;
+    }
+    case "DebugFire": {
+      debugFireProgram.bind();
+      gl.uniform1i(debugFireProgram.uniforms.uFuel, fuel.read.texId);
+      gl.uniform1i(debugFireProgram.uniforms.uTemperature, temperature.read.texId);
+      gl.uniform1f(debugFireProgram.uniforms.temperatureScalar, 0.001);
+      gl.uniform1f(debugFireProgram.uniforms.fuelScalar, 1.0);
+      break;
+    }
+    case "DebugTemperature": {
+      debugFloatProgram.bind();
+      gl.uniform1i(debugFloatProgram.uniforms.uTexture, temperature.read.texId);
+      gl.uniform1f(debugFloatProgram.uniforms.scalar, 0.001);
+      break;
+    }
+    case "DebugFuel": {
+      debugFloatProgram.bind();
+      gl.uniform1i(debugFloatProgram.uniforms.uTexture, fuel.read.texId);
+      gl.uniform1f(debugFloatProgram.uniforms.scalar, 1.0);
+      break;
+    }
+    case "DebugPressure": {
+      debugFloatProgram.bind();
+      gl.uniform1i(debugFloatProgram.uniforms.uTexture, pressure.read.texId);
+      gl.uniform1f(debugFloatProgram.uniforms.scalar, 1.0);
+      break;
+    }
+    default: {
+      displayProgram.bind();
+      gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
+      break;
+    }
+  }
   blit(null);
+
+  document.getElementById("debug-box").innerHTML = DISPLAY_MODES[config.DISPLAY_MODE];
 }
 
 function splat (x, y, dx, dy, color) {
@@ -403,20 +456,6 @@ function splat (x, y, dx, dy, color) {
   density.swap();
 }
 
-function multipleSplats (amount) {
-  for (let i = 0; i < amount; i++) {
-    const color = generateColor();
-    color.r *= 10.0;
-    color.g *= 10.0;
-    color.b *= 10.0;
-    const x = canvas.width * Math.random();
-    const y = canvas.height * Math.random();
-    const dx = 1000 * (Math.random() - 0.5);
-    const dy = 1000 * (Math.random() - 0.5);
-    splat(x, y, dx, dy, color);
-  }
-}
-
 let simWidth;
 let simHeight;
 let dyeWidth;
@@ -440,8 +479,11 @@ let debugFloatProgram;
 let displayProgram;
 let displayFireProgram;
 let divergenceProgram;
+let particlesAdvectionProgram;
+let particlesRenderProgram;
 let pressureIterationProgram;
 let projectionProgram;
+let rowProgram;
 let splatProgram;
 let vorticityConfinementProgram;
 
@@ -503,6 +545,16 @@ function step (dt) {
   blit(velocity.write.fbo);
   velocity.swap();
 
+  // Dissipate some pressure to give the illusion of an open box.
+  clearProgram.bind();
+  let pressureTexId = pressure.read.texId;
+  gl.activeTexture(gl.TEXTURE0 + pressureTexId);
+  gl.bindTexture(gl.TEXTURE_2D, pressure.read.texture);
+  gl.uniform1i(clearProgram.uniforms.uTexture, pressureTexId);
+  gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE_DISSIPATION);
+  blit(pressure.write.fbo);
+  pressure.swap();
+
   // Projection step.
   gl.viewport(0, 0, simWidth, simHeight);
   // Compute velocity divergence field.
@@ -512,11 +564,10 @@ function step (dt) {
   blit(divergence.fbo);
   // Solve for pressure field with Jacobi iteration.
   pressureIterationProgram.bind();
+  gl.uniform1i(pressureIterationProgram.uniforms.uPressure, pressureTexId);
   gl.uniform2f(pressureIterationProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
   gl.uniform1i(pressureIterationProgram.uniforms.uDivergence, divergence.texId);
-  let pressureTexId = pressure.read.texId;
-  gl.uniform1i(pressureIterationProgram.uniforms.uPressure, pressureTexId);
-  gl.activeTexture(gl.TEXTURE0 + pressureTexId);
+
   for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
     gl.bindTexture(gl.TEXTURE_2D, pressure.read.texture);
     blit(pressure.write.fbo);
@@ -607,12 +658,28 @@ function main () {
       url: "./shaders/divergenceShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
+    particlesAdvectionShader: {
+      url: "./shaders/particlesAdvectionShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    particlesRenderShader: {
+      url: "./shaders/particlesRenderShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    particlesVertexShader: {
+      url: "./shaders/particlesVertexShader.glsl",
+      type: gl.VERTEX_SHADER,
+    },
     pressureIterationShader: {
       url: "./shaders/pressureIterationShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
     projectionShader: {
       url: "./shaders/projectionShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    rowShader: {
+      url: "./shaders/rowShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
     splatShader: {
@@ -646,13 +713,15 @@ function main () {
     displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
     displayFireProgram        = new GLProgram(shaders.baseVertexShader, shaders.displayFireShader);
     divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
+    particlesAdvectionProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesAdvectionShader);
+    particlesRenderProgram    = new GLProgram(shaders.particlesVertexShader, shaders.particlesRenderShader);
     pressureIterationProgram  = new GLProgram(shaders.baseVertexShader, shaders.pressureIterationShader);
     projectionProgram         = new GLProgram(shaders.baseVertexShader, shaders.projectionShader);
+    rowProgram                = new GLProgram(shaders.baseVertexShader, shaders.rowShader);
     splatProgram              = new GLProgram(shaders.baseVertexShader, shaders.splatShader);
     vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
 
     initFramebuffers();
-    // multipleSplats(parseInt(Math.random() * 20) + 5);
 
     update();
   });
@@ -710,6 +779,12 @@ window.addEventListener('touchend', (e) => {
     for (let j = 0; j < pointers.length; j++)
       if (touches[i].identifier == pointers[j].id)
         pointers[j].down = false;
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === " ") {
+    config.DISPLAY_MODE = (config.DISPLAY_MODE + 1) % DISPLAY_MODES.length;
+  }
 });
 
 function pointerPrototype () {

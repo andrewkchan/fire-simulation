@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Fluid Simulator</title>
+    <title>Fire Simulator</title>
     <meta name="mobile-web-app-capable" content="yes">
 
     <style>
@@ -25,9 +25,19 @@
         width: 100%;
         height: 100%;
       }
+
+      #debug-box {
+        position: fixed;
+        z-index: 1;
+        background-color: transparent;
+        color: #fff;
+        font-family: monospace;
+      }
     </style>
   </head>
   <body>
+    <div id="debug-box">
+    </div>
     <canvas id="glCanvas"></canvas>
     <script src="./gl-matrix-min.js"></script>
     <script src="./main.js"></script>

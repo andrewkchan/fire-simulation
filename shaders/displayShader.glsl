@@ -1,3 +1,7 @@
+/*
+Display a texture.
+*/
+
 precision highp float;
 precision mediump sampler2D;
 

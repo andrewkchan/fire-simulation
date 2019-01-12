@@ -4,11 +4,13 @@ precision mediump sampler2D;
 varying vec2 vUv;
 uniform sampler2D uDensity;
 uniform sampler2D uTemperature;
+uniform sampler2D uFuel;
+uniform float burnTemperature;
 
 // Blackbody color palette. Handy for all kinds of things.
 vec3 blackbody(float t){
   // t = tLow + (tHigh - tLow)*t;
-  // t *= 4000.; // Temperature range. Hardcoded from 0K to 4000K, in this case.
+  t *= (3000./burnTemperature); // Temperature range. Otherwise hardcoded from 0K to 4000K.
 
   // Planckian locus or black body locus approximated in CIE color space.
   float cx = (0.860117757 + 1.54118254e-4*t + 1.28641212e-7*t*t)/(1.0 + 8.42420235e-4*t + 7.08145163e-7*t*t);
@@ -28,11 +30,9 @@ vec3 blackbody(float t){
 
 void main () {
   float temp = texture2D(uTemperature, vUv).x;
+  float fuel = texture2D(uFuel, vUv).x;
+  float visibility = (exp(10.*fuel)-exp(-10.*fuel))/(exp(10.*fuel)+exp(-10.*fuel));
   vec4 density = texture2D(uDensity, vUv);
 
-  // if (density.x > 0.5) {
-  //   gl_FragColor = vec4(blackbody(temp), 1.0);
-  // }
-  gl_FragColor = vec4(blackbody(temp), 1.0);
-  // gl_FragColor = vec4(blackbody(temp) + density.xyz, 1.0);
+  gl_FragColor = vec4(visibility*blackbody(temp), 1.0);
 }
