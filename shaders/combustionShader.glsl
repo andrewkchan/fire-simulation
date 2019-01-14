@@ -13,12 +13,16 @@ uniform float dt;
 uniform float burnTemperature;
 uniform float cooling; // cooling coefficient.
 
+float fuelTemperature (float fuel) {
+  return fuel * burnTemperature;
+}
+
 void main () {
   float temp = texture2D(uTemperature, vUv).x;
   float fuel = texture2D(uFuel, vUv).x;
   // cool existing temperature.
   temp = max(0.0, temp - dt * cooling * pow(temp / burnTemperature, 4.0));
   // add more heat based on fuel.
-  temp = max(temp, fuel * burnTemperature);
+  temp = max(temp, fuelTemperature(fuel));
   gl_FragColor = vec4(temp, 0.0, 0.0, 1.0);
 }

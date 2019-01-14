@@ -16,29 +16,129 @@ let config = {
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
   SIM_RESOLUTION: 256,
-  SPLAT_RADIUS: 0.5,
+  SPLAT_RADIUS: 0.01,
   VELOCITY_DISSIPATION: 0.98,
 };
 
 let DISPLAY_MODES = ["Normal", "DebugFire", "DebugTemperature", "DebugFuel", "DebugPressure", "DebugDensity"];
 
 class FireSource {
-  constructor (x, y, dx, dy) {
+  constructor (x, y, dx, dy, numParticles, lifespan) {
     this.x = x;
     this.y = y;
     this.dx = dx;
     this.dy = dy;
+    this.lifespan = lifespan;
+    this.dataWidth = Math.ceil(Math.sqrt(numParticles));
+    this.numParticles = numParticles;
+    this.infiniteLifespan = !!(lifespan < 0.0);
+
+    const rgba = ext.formatRGBA;
+    const r = ext.formatR;
+    const texType = ext.halfFloatTexType;
+    this.particleData = createDoubleFBO(
+      12,
+      this.dataWidth,
+      this.dataWidth,
+      rgba.internalFormat,
+      rgba.format,
+      texType,
+      gl.NEAREST,
+    );
+    this.particleLifespans = createDoubleFBO(
+      14,
+      this.dataWidth,
+      this.dataWidth,
+      r.internalFormat,
+      r.format,
+      texType,
+      gl.NEAREST,
+    );
+    this.particleUVs = gl.createBuffer();
+    var arrayUVs = [];
+    for (let i = 0; i < this.dataWidth; i++) {
+      for (let j = 0; j < this.dataWidth; j++) {
+        arrayUVs.push(i / this.dataWidth);
+        arrayUVs.push(j / this.dataWidth);
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleUVs);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arrayUVs), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // reset dead particle positions/velocities.
+    particlesResetDataProgram.bind();
+    gl.uniform2f(particlesResetDataProgram.uniforms.initialPosition, this.x / canvas.width, this.y / canvas.height);
+    gl.uniform2f(particlesResetDataProgram.uniforms.initialVelocity, this.dx, this.dy);
+    gl.uniform1i(particlesResetDataProgram.uniforms.particleData, this.particleData.read.texId);
+    gl.uniform1i(particlesResetDataProgram.uniforms.particleLifespans, this.particleLifespans.read.texId);
+    blit(this.particleData.write.fbo);
+    this.particleData.swap();
+    // reset dead particle lifespans.
+    particlesResetLifespanProgram.bind();
+    gl.uniform1f(particlesResetLifespanProgram.uniforms.initialLifespan, this.lifespan);
+    gl.uniform1i(particlesResetLifespanProgram.uniforms.particleData, this.particleData.read.texId);
+    gl.uniform1i(particlesResetLifespanProgram.uniforms.particleLifespans, this.particleLifespans.read.texId);
+    blit(this.particleLifespans.write.fbo);
+    this.particleLifespans.swap();
   }
 
-  emitFire () {
-    splat(this.x, this.y, this.dx, this.dy, { r: 0.0, g: 0.0, b: 0.0 });
+  step (dt) {
+    gl.viewport(0, 0, this.dataWidth, this.dataWidth);
+
+    // advect the particles.
+    particlesAdvectionProgram.bind();
+    gl.uniform1f(particlesAdvectionProgram.uniforms.dissipation, config.VELOCITY_DISSIPATION);
+    gl.uniform1f(particlesAdvectionProgram.uniforms.dt, dt);
+    gl.uniform1i(particlesAdvectionProgram.uniforms.particleData, this.particleData.read.texId);
+    gl.uniform2f(particlesAdvectionProgram.uniforms.texelSize, 1 / simWidth, 1 / simHeight);
+    gl.uniform1i(particlesAdvectionProgram.uniforms.uVelocity, velocity.read.texId);
+    blit(this.particleData.write.fbo);
+    this.particleData.swap();
+
+    if (!this.infiniteLifespan) {
+      // step particle lifespans.
+      particlesStepLifespanProgram.bind();
+      gl.uniform1i(particlesStepLifespanProgram.uniforms.particleData, this.particleData.read.texId);
+      gl.uniform1i(particlesStepLifespanProgram.uniforms.particleLifespans, this.particleLifespans.read.texId);
+      gl.uniform1f(particlesStepLifespanProgram.uniforms.dt, dt);
+      blit(this.particleLifespans.write.fbo);
+      this.particleLifespans.swap();
+
+      // reset dead particle positions/velocities.
+      particlesResetDataProgram.bind();
+      gl.uniform2f(particlesResetDataProgram.uniforms.initialPosition, this.x / canvas.width, this.y / canvas.height);
+      gl.uniform2f(particlesResetDataProgram.uniforms.initialVelocity, this.dx, this.dy);
+      gl.uniform1i(particlesResetDataProgram.uniforms.particleData, this.particleData.read.texId);
+      gl.uniform1i(particlesResetDataProgram.uniforms.particleLifespans, this.particleLifespans.read.texId);
+      blit(this.particleData.write.fbo);
+      this.particleData.swap();
+      // reset dead particle lifespans.
+      particlesResetLifespanProgram.bind();
+      gl.uniform1f(particlesResetLifespanProgram.uniforms.initialLifespan, this.lifespan);
+      gl.uniform1i(particlesResetLifespanProgram.uniforms.particleData, this.particleData.read.texId);
+      gl.uniform1i(particlesResetLifespanProgram.uniforms.particleLifespans, this.particleLifespans.read.texId);
+      blit(this.particleLifespans.write.fbo);
+      this.particleLifespans.swap();
+    }
+  }
+
+  renderParticles (viewportWidth, viewportHeight, destination, color) {
+    gl.viewport(0, 0, viewportWidth, viewportHeight);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleUVs);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
+
+    particlesRenderProgram.bind();
+    gl.uniform1i(particlesRenderProgram.uniforms.particleData, this.particleData.read.texId);
+    gl.uniform1f(particlesRenderProgram.uniforms.size, 1.0);
+    gl.uniform3f(particlesRenderProgram.uniforms.color, color.r, color.g, color.b);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleUVs);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
+    gl.drawArrays(gl.POINTS, 0, this.numParticles);
   }
 }
-
-let pointers = [new pointerPrototype()];
-let fireSources = [];
-// fireSources.push(new FireSource(canvas.clientWidth / 2, canvas.clientHeight - 50, 0, -1));
-// fireSources.push(new FireSource(50, canvas.clientHeight / 2, 10, 10));
 
 function getWebGLContext (canvas) {
   const params = {
@@ -189,14 +289,17 @@ function compileShader (type, source) {
 Render quad to a specified framebuffer `destination`. If null, render to the default framebuffer.
 */
 const blit = (() => {
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  const quadVertexBuffer = gl.createBuffer();
+  const quadElementBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadVertexBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quadElementBuffer);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
-  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(0);
 
   return (destination) => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadVertexBuffer);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   };
@@ -348,7 +451,6 @@ function update () {
 }
 
 function input () {
-  fireSources.forEach(fs => fs.emitFire());
   // bottom row fire
   gl.viewport(0, 0, simWidth, simHeight);
   rowProgram.bind();
@@ -389,6 +491,12 @@ function render () {
       gl.uniform1i(displayFireProgram.uniforms.uTemperature, temperature.read.texId);
       gl.uniform1i(displayFireProgram.uniforms.uFuel, fuel.read.texId);
       gl.uniform1f(displayFireProgram.uniforms.burnTemperature, config.BURN_TEMPERATURE);
+      blit(null);
+
+      // render particles from each emitter
+      fireSources.forEach(fireSource => {
+        fireSource.renderParticles(width, height, null, { r: 1.0, g: 1.0, b: 1.0 });
+      });
       break;
     }
     case "DebugFire": {
@@ -397,33 +505,37 @@ function render () {
       gl.uniform1i(debugFireProgram.uniforms.uTemperature, temperature.read.texId);
       gl.uniform1f(debugFireProgram.uniforms.temperatureScalar, 0.001);
       gl.uniform1f(debugFireProgram.uniforms.fuelScalar, 1.0);
+      blit(null);
       break;
     }
     case "DebugTemperature": {
       debugFloatProgram.bind();
       gl.uniform1i(debugFloatProgram.uniforms.uTexture, temperature.read.texId);
       gl.uniform1f(debugFloatProgram.uniforms.scalar, 0.001);
+      blit(null);
       break;
     }
     case "DebugFuel": {
       debugFloatProgram.bind();
       gl.uniform1i(debugFloatProgram.uniforms.uTexture, fuel.read.texId);
       gl.uniform1f(debugFloatProgram.uniforms.scalar, 1.0);
+      blit(null);
       break;
     }
     case "DebugPressure": {
       debugFloatProgram.bind();
       gl.uniform1i(debugFloatProgram.uniforms.uTexture, pressure.read.texId);
       gl.uniform1f(debugFloatProgram.uniforms.scalar, 1.0);
+      blit(null);
       break;
     }
     default: {
       displayProgram.bind();
       gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
+      blit(null);
       break;
     }
   }
-  blit(null);
 
   document.getElementById("debug-box").innerHTML = DISPLAY_MODES[config.DISPLAY_MODE];
 }
@@ -456,6 +568,9 @@ function splat (x, y, dx, dy, color) {
   density.swap();
 }
 
+let pointers = [new pointerPrototype()];
+let fireSources = [];
+
 let simWidth;
 let simHeight;
 let dyeWidth;
@@ -481,6 +596,9 @@ let displayFireProgram;
 let divergenceProgram;
 let particlesAdvectionProgram;
 let particlesRenderProgram;
+let particlesResetDataProgram;
+let particlesResetLifespanProgram;
+let particlesStepLifespanProgram;
 let pressureIterationProgram;
 let projectionProgram;
 let rowProgram;
@@ -606,6 +724,12 @@ function step (dt) {
   gl.uniform1f(advectionProgram.uniforms.dissipation, config.FUEL_DISSIPATION);
   blit(fuel.write.fbo);
   fuel.swap();
+
+  fireSources.forEach(fireSource => fireSource.step(dt));
+  fireSources.forEach(fireSource => {
+    // fireSource.renderParticles(simWidth, simHeight, fuel.write.fbo, { r: 0.1, g: 0.0, b: 0.0 });
+    // fuel.swap();
+  });
 }
 
 function main () {
@@ -666,6 +790,18 @@ function main () {
       url: "./shaders/particlesRenderShader.glsl",
       type: gl.FRAGMENT_SHADER,
     },
+    particlesResetDataShader: {
+      url: "./shaders/particlesResetData.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    particlesResetLifespanShader: {
+      url: "./shaders/particlesResetLifespan.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
+    particlesStepLifespanShader: {
+      url: "./shaders/particlesStepLifespan.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
     particlesVertexShader: {
       url: "./shaders/particlesVertexShader.glsl",
       type: gl.VERTEX_SHADER,
@@ -715,6 +851,9 @@ function main () {
     divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
     particlesAdvectionProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesAdvectionShader);
     particlesRenderProgram    = new GLProgram(shaders.particlesVertexShader, shaders.particlesRenderShader);
+    particlesResetDataProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesResetDataShader);
+    particlesResetLifespanProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesResetLifespanShader);
+    particlesStepLifespanProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesStepLifespanShader);
     pressureIterationProgram  = new GLProgram(shaders.baseVertexShader, shaders.pressureIterationShader);
     projectionProgram         = new GLProgram(shaders.baseVertexShader, shaders.projectionShader);
     rowProgram                = new GLProgram(shaders.baseVertexShader, shaders.rowShader);
@@ -722,6 +861,7 @@ function main () {
     vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
 
     initFramebuffers();
+    fireSources.push(new FireSource(canvas.clientWidth / 2, canvas.clientHeight / 2, 0., -1., 1024, -1));
 
     update();
   });

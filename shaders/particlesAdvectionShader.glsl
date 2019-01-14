@@ -5,7 +5,7 @@ Advect an array of particles through a velocity field, assuming built-in interpo
 precision highp float;
 precision mediump sampler2D;
 
-uniform vec2 vUv; // for particles, each texel is a separate particle.
+varying vec2 vUv; // for particles, each texel is a separate particle.
 uniform sampler2D uVelocity;
 uniform vec2 texelSize; // simulation grid size.
 uniform float dt;
