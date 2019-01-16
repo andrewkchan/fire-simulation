@@ -34,6 +34,7 @@ float noise(vec2 p, float freq){
 void main () {
   vec3 base = texture2D(uTarget, vUv).xyz;
   vec3 noise = vec3(noise(vUv, 100.)/.9 + .1, 0.0, 0.0);
+  // vec3 noise = vec3(1., 0., 0.);
   if (vUv.y < texelSize.y * y) {
     if (useMax) {
       gl_FragColor = vec4(max(base, noise), 1.0);

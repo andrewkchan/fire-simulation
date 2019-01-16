@@ -7,20 +7,23 @@ canvas.height = canvas.clientHeight;
 let config = {
   BUOYANCY: 0.2,
   BURN_TEMPERATURE: 1700,
-  CONFINEMENT: 30,
+  CONFINEMENT: 15,
   COOLING: 3000,
   DISPLAY_MODE: 0,
   DYE_RESOLUTION: 512,
   FUEL_DISSIPATION: 0.92,
   DENSITY_DISSIPATION: 0.99,
+  NOISE_BLENDING: 0.5,
+  NOISE_VOLATILITY: 0.1,
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
   SIM_RESOLUTION: 256,
-  SPLAT_RADIUS: 0.01,
+  SPLAT_RADIUS: 0.5,
   VELOCITY_DISSIPATION: 0.98,
 };
 
-let DISPLAY_MODES = ["Normal", "DebugFire", "DebugTemperature", "DebugFuel", "DebugPressure", "DebugDensity"];
+let DISPLAY_MODES = ["Normal", "DebugFire", "DebugTemperature", "DebugFuel", "DebugPressure", "DebugDensity", "DebugNoise"];
+let LAST_TEX_ID = 0;
 
 class FireSource {
   constructor (x, y, dx, dy, numParticles, lifespan) {
@@ -37,7 +40,6 @@ class FireSource {
     const r = ext.formatR;
     const texType = ext.halfFloatTexType;
     this.particleData = createDoubleFBO(
-      12,
       this.dataWidth,
       this.dataWidth,
       rgba.internalFormat,
@@ -46,7 +48,6 @@ class FireSource {
       gl.NEAREST,
     );
     this.particleLifespans = createDoubleFBO(
-      14,
       this.dataWidth,
       this.dataWidth,
       r.internalFormat,
@@ -126,7 +127,6 @@ class FireSource {
   renderParticles (viewportWidth, viewportHeight, destination, color) {
     gl.viewport(0, 0, viewportWidth, viewportHeight);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleUVs);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
 
     particlesRenderProgram.bind();
     gl.uniform1i(particlesRenderProgram.uniforms.particleData, this.particleData.read.texId);
@@ -136,6 +136,7 @@ class FireSource {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.particleUVs);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
     gl.drawArrays(gl.POINTS, 0, this.numParticles);
   }
 }
@@ -320,7 +321,6 @@ function initFramebuffers() {
   const r = ext.formatR;
 
   curl = createFBO(
-    5,
     simWidth,
     simHeight,
     r.internalFormat,
@@ -329,7 +329,6 @@ function initFramebuffers() {
     gl.NEAREST,
   );
   density = createDoubleFBO(
-    2,
     dyeWidth,
     dyeHeight,
     rgba.internalFormat,
@@ -338,7 +337,6 @@ function initFramebuffers() {
     ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
   divergence = createFBO(
-    4,
     simWidth,
     simHeight,
     r.internalFormat,
@@ -347,7 +345,14 @@ function initFramebuffers() {
     gl.NEAREST,
   );
   fuel = createDoubleFBO(
-    10,
+    simWidth,
+    simHeight,
+    r.internalFormat,
+    r.format,
+    texType,
+    ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
+  );
+  noise = createDoubleFBO(
     simWidth,
     simHeight,
     r.internalFormat,
@@ -356,7 +361,6 @@ function initFramebuffers() {
     ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
   pressure = createDoubleFBO(
-    6,
     simWidth,
     simHeight,
     r.internalFormat,
@@ -365,7 +369,6 @@ function initFramebuffers() {
     gl.NEAREST,
   );
   temperature = createDoubleFBO(
-    8,
     simWidth,
     simHeight,
     r.internalFormat,
@@ -374,7 +377,6 @@ function initFramebuffers() {
     ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST,
   );
   velocity = createDoubleFBO(
-    0,
     simWidth,
     simHeight,
     rg.internalFormat,
@@ -400,7 +402,8 @@ function getResolution (resolution) {
   }
 }
 
-function createFBO (texId, w, h, internalFormat, format, type, filter) {
+function createFBO (w, h, internalFormat, format, type, filter) {
+  const texId = LAST_TEX_ID++;
   gl.activeTexture(gl.TEXTURE0 + texId);
   let texture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -423,9 +426,9 @@ function createFBO (texId, w, h, internalFormat, format, type, filter) {
   };
 }
 
-function createDoubleFBO (texId, w, h, internalFormat, format, type, filter) {
-  let fbo1 = createFBO(texId, w, h, internalFormat, format, type, filter);
-  let fbo2 = createFBO(texId + 1, w, h, internalFormat, format, type, filter);
+function createDoubleFBO (w, h, internalFormat, format, type, filter) {
+  let fbo1 = createFBO(w, h, internalFormat, format, type, filter);
+  let fbo2 = createFBO(w, h, internalFormat, format, type, filter);
 
   return {
     get read () {
@@ -529,6 +532,13 @@ function render () {
       blit(null);
       break;
     }
+    case "DebugNoise": {
+      debugFloatProgram.bind();
+      gl.uniform1i(debugFloatProgram.uniforms.uTexture, noise.read.texId);
+      gl.uniform1f(debugFloatProgram.uniforms.scalar, 1.0);
+      blit(null);
+      break;
+    }
     default: {
       displayProgram.bind();
       gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
@@ -580,10 +590,12 @@ let curl;
 let density;
 let divergence;
 let fuel;
+let noise;
 let pressure;
 let temperature;
 let velocity;
 
+let addNoiseProgram;
 let advectionProgram;
 let buoyancyProgram;
 let clearProgram;
@@ -611,12 +623,19 @@ Update the programs by delta time.
 function step (dt) {
   gl.viewport(0, 0, simWidth, simHeight);
 
+  // Add fuel from particles to the *read* buffer.
+  fireSources.forEach(fireSource => {
+    fireSource.renderParticles(simWidth, simHeight, fuel.read.fbo, { r: 1.0, g: 0., b: 0. });
+  });
+
   // Combustion step.
   // Burn fuel and cool temperature.
   combustionProgram.bind();
   gl.uniform2f(combustionProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
   gl.uniform1i(combustionProgram.uniforms.uFuel, fuel.read.texId);
   gl.uniform1i(combustionProgram.uniforms.uTemperature, temperature.read.texId);
+  gl.uniform1i(combustionProgram.uniforms.uNoise, noise.read.texId);
+  gl.uniform1f(combustionProgram.uniforms.noiseBlending, config.NOISE_BLENDING);
   gl.uniform1f(combustionProgram.uniforms.burnTemperature, config.BURN_TEMPERATURE);
   gl.uniform1f(combustionProgram.uniforms.cooling, config.COOLING);
   gl.uniform1f(combustionProgram.uniforms.dt, dt);
@@ -642,6 +661,8 @@ function step (dt) {
   curlProgram.bind();
   gl.uniform2f(curlProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
   gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.texId);
+  gl.uniform1i(curlProgram.uniforms.uNoise, noise.read.texId);
+  gl.uniform1f(curlProgram.uniforms.blendLevel, config.NOISE_BLENDING);
   blit(curl.fbo);
   // Confine vortices.
   vorticityConfinementProgram.bind();
@@ -724,16 +745,30 @@ function step (dt) {
   gl.uniform1f(advectionProgram.uniforms.dissipation, config.FUEL_DISSIPATION);
   blit(fuel.write.fbo);
   fuel.swap();
+  // Advect noise.
+  gl.uniform1i(advectionProgram.uniforms.uSource, noise.read.texId);
+  gl.uniform1f(advectionProgram.uniforms.dissipation, 1.0);
+  blit(noise.write.fbo);
+  noise.swap();
+
+  // Blend in some noise to the noise channel.
+  addNoiseProgram.bind();
+  gl.uniform2f(addNoiseProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1f(addNoiseProgram.uniforms.time, (new Date()).getTime() / 1.e4 % 1);
+  gl.uniform1i(addNoiseProgram.uniforms.uTarget, noise.read.texId);
+  gl.uniform1f(addNoiseProgram.uniforms.blendLevel, config.NOISE_VOLATILITY);
+  blit(noise.write.fbo);
+  noise.swap();
 
   fireSources.forEach(fireSource => fireSource.step(dt));
-  fireSources.forEach(fireSource => {
-    // fireSource.renderParticles(simWidth, simHeight, fuel.write.fbo, { r: 0.1, g: 0.0, b: 0.0 });
-    // fuel.swap();
-  });
 }
 
 function main () {
   let shaderSources = {
+    addNoiseShader: {
+      url: "./shaders/addNoiseShader.glsl",
+      type: gl.FRAGMENT_SHADER,
+    },
     advectionManualFilteringShader: {
       url: "./shaders/advectionManualFilteringShader.glsl",
       type: gl.FRAGMENT_SHADER,
@@ -840,6 +875,7 @@ function main () {
         shaders.baseVertexShader,
         ext.supportLinearFiltering ? shaders.advectionShader : shaders.advectionManualFilteringShader
       );
+    addNoiseProgram           = new GLProgram(shaders.baseVertexShader, shaders.addNoiseShader);
     buoyancyProgram           = new GLProgram(shaders.baseVertexShader, shaders.buoyancyShader);
     clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
     combustionProgram         = new GLProgram(shaders.baseVertexShader, shaders.combustionShader);
@@ -861,7 +897,16 @@ function main () {
     vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
 
     initFramebuffers();
-    fireSources.push(new FireSource(canvas.clientWidth / 2, canvas.clientHeight / 2, 0., -1., 1024, -1));
+    fireSources.push(new FireSource(canvas.clientWidth / 2, canvas.clientHeight / 2, 0., -1., 1024, 5.));
+
+    // Initialize the noise channel.
+    addNoiseProgram.bind();
+    gl.uniform2f(addNoiseProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+    gl.uniform1f(addNoiseProgram.uniforms.time, (new Date()).getTime() / 1.e6 % 1);
+    gl.uniform1i(addNoiseProgram.uniforms.uTarget, noise.read.texId);
+    gl.uniform1f(addNoiseProgram.uniforms.blendLevel, 1.0);
+    blit(noise.write.fbo);
+    noise.swap();
 
     update();
   });

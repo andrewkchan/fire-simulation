@@ -32,6 +32,7 @@ void main () {
   float temp = texture2D(uTemperature, vUv).x;
   float fuel = texture2D(uFuel, vUv).x;
   float visibility = (exp(10.*fuel)-exp(-10.*fuel))/(exp(10.*fuel)+exp(-10.*fuel));
+  // float visibility = 1.;
   vec4 density = texture2D(uDensity, vUv);
 
   gl_FragColor = vec4(visibility*blackbody(temp), 1.0);

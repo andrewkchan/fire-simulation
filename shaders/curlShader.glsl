@@ -11,6 +11,8 @@ varying vec2 vR;
 varying vec2 vT;
 varying vec2 vB;
 uniform sampler2D uVelocity;
+uniform sampler2D uNoise;
+uniform float blendLevel;
 
 void main () {
   float L = texture2D(uVelocity, vL).y;
@@ -18,5 +20,7 @@ void main () {
   float T = texture2D(uVelocity, vT).x;
   float B = texture2D(uVelocity, vB).x;
   float vorticity = (R - L) - (T - B);
+  float noise = 1000. * (texture2D(uNoise, vUv).x - 0.5); // scale 0-1 noise up to the right level.
+  vorticity += blendLevel * noise;
   gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
 }
