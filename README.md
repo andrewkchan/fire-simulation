@@ -5,6 +5,7 @@
 
 - 2D Fluid simulation (uniform grid, simulating incompressible fluid with semi-lagrangian advection) 
 - Thermal model for fire (buoyancy + cooling)
+- Simulation steps are done in parallel on the GPU via WebGL fragment shaders
 
 ## Instructions
 - `python3 -m http.server` in project root
