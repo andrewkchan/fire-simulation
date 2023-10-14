@@ -18,7 +18,7 @@ let config = {
   PRESSURE_DISSIPATION: 0.8,
   PRESSURE_ITERATIONS: 20,
   SIM_RESOLUTION: 256,
-  SPLAT_RADIUS: 0.5,
+  SPLAT_RADIUS: 0.7,
   VELOCITY_DISSIPATION: 0.98,
 };
 
@@ -539,7 +539,7 @@ function render () {
       blit(null);
       break;
     }
-    default: {
+    default: /* DebugDensity */ {
       displayProgram.bind();
       gl.uniform1i(displayProgram.uniforms.uTexture, density.read.texId);
       blit(null);
@@ -573,7 +573,7 @@ function splat (x, y, dx, dy, color) {
   gl.uniform1i(splatProgram.uniforms.uTarget, density.read.texId);
   gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
   gl.uniform1f(splatProgram.uniforms.radius, config.SPLAT_RADIUS / 100.0);
-  gl.uniform1f(splatProgram.uniforms.useMax, true);
+  gl.uniform1f(splatProgram.uniforms.useMax, false);
   blit(density.write.fbo);
   density.swap();
 }
@@ -897,7 +897,6 @@ function main () {
     vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
 
     initFramebuffers();
-    fireSources.push(new FireSource(canvas.clientWidth / 2, canvas.clientHeight / 2, 0., -1., 1024, 5.));
 
     // Initialize the noise channel.
     addNoiseProgram.bind();
