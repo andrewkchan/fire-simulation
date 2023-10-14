@@ -1,4 +1,27 @@
-'use strict';
+import addNoiseShaderSource from "./shaders/addNoiseShader.glsl";
+import advectionManualFilteringShaderSource from "./shaders/advectionManualFilteringShader.glsl";
+import advectionShaderSource from "./shaders/advectionShader.glsl";
+import baseVertexShaderSource from "./shaders/baseVertexShader.glsl";
+import buoyancyShaderSource from "./shaders/buoyancyShader.glsl";
+import clearShaderSource from "./shaders/clearShader.glsl";
+import combustionShaderSource from "./shaders/combustionShader.glsl";
+import curlShaderSource from "./shaders/curlShader.glsl";
+import debugFireShaderSource from "./shaders/debugFireShader.glsl";
+import debugFloatShaderSource from "./shaders/debugFloatShader.glsl";
+import displayShaderSource from "./shaders/displayShader.glsl";
+import displayFireShaderSource from "./shaders/displayFireShader.glsl";
+import divergenceShaderSource from "./shaders/divergenceShader.glsl";
+import particlesAdvectionShaderSource from "./shaders/particlesAdvectionShader.glsl";
+import particlesRenderShaderSource from "./shaders/particlesRenderShader.glsl";
+import particlesResetDataShaderSource from "./shaders/particlesResetData.glsl";
+import particlesResetLifespanShaderSource from "./shaders/particlesResetLifespan.glsl";
+import particlesStepLifespanShaderSource from "./shaders/particlesStepLifespan.glsl";
+import particlesVertexShaderSource from "./shaders/particlesVertexShader.glsl";
+import pressureIterationShaderSource from "./shaders/pressureIterationShader.glsl";
+import projectionShaderSource from "./shaders/projectionShader.glsl";
+import rowShaderSource from "./shaders/rowShader.glsl";
+import splatShaderSource from "./shaders/splatShader.glsl";
+import vorticityConfinementShaderSource from "./shaders/vorticityConfinementShader.glsl";
 
 const canvas = document.getElementsByTagName('canvas')[0];
 canvas.width = canvas.clientWidth;
@@ -241,6 +264,49 @@ function supportRenderTextureFormat (gl, internalFormat, format, type) {
 const { gl, ext } = getWebGLContext(canvas);
 
 /*
+Compiles a shader of the given type (either gl.VERTEX_SHADER or gl.FRAGMENT_SHADER) and source code (string).
+Returns the WebGL shader handler.
+*/
+function compileShader (type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw gl.getShaderInfoLog(shader);
+  }
+
+  return shader;
+}
+
+const shaders = {
+  addNoiseShader: compileShader(gl.FRAGMENT_SHADER, addNoiseShaderSource),
+  advectionManualFilteringShader: compileShader(gl.FRAGMENT_SHADER, advectionManualFilteringShaderSource),
+  advectionShader: compileShader(gl.FRAGMENT_SHADER, advectionShaderSource),
+  baseVertexShader: compileShader(gl.VERTEX_SHADER, baseVertexShaderSource),
+  buoyancyShader: compileShader(gl.FRAGMENT_SHADER, buoyancyShaderSource),
+  clearShader: compileShader(gl.FRAGMENT_SHADER, clearShaderSource),
+  combustionShader: compileShader(gl.FRAGMENT_SHADER, combustionShaderSource),
+  curlShader: compileShader(gl.FRAGMENT_SHADER, curlShaderSource),
+  debugFireShader: compileShader(gl.FRAGMENT_SHADER, debugFireShaderSource),
+  debugFloatShader: compileShader(gl.FRAGMENT_SHADER, debugFloatShaderSource),
+  displayShader: compileShader(gl.FRAGMENT_SHADER, displayShaderSource),
+  displayFireShader: compileShader(gl.FRAGMENT_SHADER, displayFireShaderSource),
+  divergenceShader: compileShader(gl.FRAGMENT_SHADER, divergenceShaderSource),
+  particlesAdvectionShader: compileShader(gl.FRAGMENT_SHADER, particlesAdvectionShaderSource),
+  particlesRenderShader: compileShader(gl.FRAGMENT_SHADER, particlesRenderShaderSource),
+  particlesResetDataShader: compileShader(gl.FRAGMENT_SHADER, particlesResetDataShaderSource),
+  particlesResetLifespanShader: compileShader(gl.FRAGMENT_SHADER, particlesResetLifespanShaderSource),
+  particlesStepLifespanShader: compileShader(gl.FRAGMENT_SHADER, particlesStepLifespanShaderSource),
+  particlesVertexShader: compileShader(gl.VERTEX_SHADER, particlesVertexShaderSource),
+  pressureIterationShader: compileShader(gl.FRAGMENT_SHADER, pressureIterationShaderSource),
+  projectionShader: compileShader(gl.FRAGMENT_SHADER, projectionShaderSource),
+  rowShader: compileShader(gl.FRAGMENT_SHADER, rowShaderSource),
+  splatShader: compileShader(gl.FRAGMENT_SHADER, splatShaderSource),
+  vorticityConfinementShader: compileShader(gl.FRAGMENT_SHADER, vorticityConfinementShaderSource),
+};
+
+/*
 class GLProgram
 
 Encapsulates a WebGL program with vertex and fragment shader.
@@ -268,22 +334,6 @@ class GLProgram {
   bind () {
     gl.useProgram(this.program);
   }
-}
-
-/*
-Compiles a shader of the given type (either gl.VERTEX_SHADER or gl.FRAGMENT_SHADER) and source code (string).
-Returns the WebGL shader handler.
-*/
-function compileShader (type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    throw gl.getShaderInfoLog(shader);
-  }
-
-  return shader;
 }
 
 /*
@@ -764,151 +814,44 @@ function step (dt) {
 }
 
 function main () {
-  let shaderSources = {
-    addNoiseShader: {
-      url: "./shaders/addNoiseShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    advectionManualFilteringShader: {
-      url: "./shaders/advectionManualFilteringShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    advectionShader: {
-      url: "./shaders/advectionShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    baseVertexShader: {
-      url: "./shaders/baseVertexShader.glsl",
-      type: gl.VERTEX_SHADER,
-    },
-    buoyancyShader: {
-      url: "./shaders/buoyancyShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    clearShader: {
-      url: "./shaders/clearShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    combustionShader: {
-      url: "./shaders/combustionShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    curlShader: {
-      url: "./shaders/curlShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    debugFireShader: {
-      url: "./shaders/debugFireShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    debugFloatShader: {
-      url: "./shaders/debugFloatShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    displayShader: {
-      url: "./shaders/displayShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    displayFireShader: {
-      url: "./shaders/displayFireShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    divergenceShader: {
-      url: "./shaders/divergenceShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    particlesAdvectionShader: {
-      url: "./shaders/particlesAdvectionShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    particlesRenderShader: {
-      url: "./shaders/particlesRenderShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    particlesResetDataShader: {
-      url: "./shaders/particlesResetData.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    particlesResetLifespanShader: {
-      url: "./shaders/particlesResetLifespan.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    particlesStepLifespanShader: {
-      url: "./shaders/particlesStepLifespan.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    particlesVertexShader: {
-      url: "./shaders/particlesVertexShader.glsl",
-      type: gl.VERTEX_SHADER,
-    },
-    pressureIterationShader: {
-      url: "./shaders/pressureIterationShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    projectionShader: {
-      url: "./shaders/projectionShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    rowShader: {
-      url: "./shaders/rowShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    splatShader: {
-      url: "./shaders/splatShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-    vorticityConfinementShader: {
-      url: "./shaders/vorticityConfinementShader.glsl",
-      type: gl.FRAGMENT_SHADER,
-    },
-  };
-  let shaders = {};
-  let shaderFetches = Object.keys(shaderSources).map((shaderName) => {
-    return fetch(shaderSources[shaderName].url)
-      .then(response => response.text())
-      .then(text => { shaders[shaderName] = compileShader(shaderSources[shaderName].type, text); });
-  });
-  Promise.all(shaderFetches).then(_ => {
-    console.log(shaders);
-    advectionProgram =
-      new GLProgram(
-        shaders.baseVertexShader,
-        ext.supportLinearFiltering ? shaders.advectionShader : shaders.advectionManualFilteringShader
-      );
-    addNoiseProgram           = new GLProgram(shaders.baseVertexShader, shaders.addNoiseShader);
-    buoyancyProgram           = new GLProgram(shaders.baseVertexShader, shaders.buoyancyShader);
-    clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
-    combustionProgram         = new GLProgram(shaders.baseVertexShader, shaders.combustionShader);
-    curlProgram               = new GLProgram(shaders.baseVertexShader, shaders.curlShader);
-    debugFireProgram          = new GLProgram(shaders.baseVertexShader, shaders.debugFireShader);
-    debugFloatProgram         = new GLProgram(shaders.baseVertexShader, shaders.debugFloatShader);
-    displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
-    displayFireProgram        = new GLProgram(shaders.baseVertexShader, shaders.displayFireShader);
-    divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
-    particlesAdvectionProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesAdvectionShader);
-    particlesRenderProgram    = new GLProgram(shaders.particlesVertexShader, shaders.particlesRenderShader);
-    particlesResetDataProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesResetDataShader);
-    particlesResetLifespanProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesResetLifespanShader);
-    particlesStepLifespanProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesStepLifespanShader);
-    pressureIterationProgram  = new GLProgram(shaders.baseVertexShader, shaders.pressureIterationShader);
-    projectionProgram         = new GLProgram(shaders.baseVertexShader, shaders.projectionShader);
-    rowProgram                = new GLProgram(shaders.baseVertexShader, shaders.rowShader);
-    splatProgram              = new GLProgram(shaders.baseVertexShader, shaders.splatShader);
-    vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
+  advectionProgram =
+    new GLProgram(
+      shaders.baseVertexShader,
+      ext.supportLinearFiltering ? shaders.advectionShader : shaders.advectionManualFilteringShader
+    );
+  addNoiseProgram           = new GLProgram(shaders.baseVertexShader, shaders.addNoiseShader);
+  buoyancyProgram           = new GLProgram(shaders.baseVertexShader, shaders.buoyancyShader);
+  clearProgram              = new GLProgram(shaders.baseVertexShader, shaders.clearShader);
+  combustionProgram         = new GLProgram(shaders.baseVertexShader, shaders.combustionShader);
+  curlProgram               = new GLProgram(shaders.baseVertexShader, shaders.curlShader);
+  debugFireProgram          = new GLProgram(shaders.baseVertexShader, shaders.debugFireShader);
+  debugFloatProgram         = new GLProgram(shaders.baseVertexShader, shaders.debugFloatShader);
+  displayProgram            = new GLProgram(shaders.baseVertexShader, shaders.displayShader);
+  displayFireProgram        = new GLProgram(shaders.baseVertexShader, shaders.displayFireShader);
+  divergenceProgram         = new GLProgram(shaders.baseVertexShader, shaders.divergenceShader);
+  particlesAdvectionProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesAdvectionShader);
+  particlesRenderProgram    = new GLProgram(shaders.particlesVertexShader, shaders.particlesRenderShader);
+  particlesResetDataProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesResetDataShader);
+  particlesResetLifespanProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesResetLifespanShader);
+  particlesStepLifespanProgram = new GLProgram(shaders.baseVertexShader, shaders.particlesStepLifespanShader);
+  pressureIterationProgram  = new GLProgram(shaders.baseVertexShader, shaders.pressureIterationShader);
+  projectionProgram         = new GLProgram(shaders.baseVertexShader, shaders.projectionShader);
+  rowProgram                = new GLProgram(shaders.baseVertexShader, shaders.rowShader);
+  splatProgram              = new GLProgram(shaders.baseVertexShader, shaders.splatShader);
+  vorticityConfinementProgram = new GLProgram(shaders.baseVertexShader, shaders.vorticityConfinementShader);
 
-    initFramebuffers();
+  initFramebuffers();
 
-    // Initialize the noise channel.
-    addNoiseProgram.bind();
-    gl.uniform2f(addNoiseProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
-    gl.uniform1f(addNoiseProgram.uniforms.time, (new Date()).getTime() / 1.e6 % 1);
-    gl.uniform1i(addNoiseProgram.uniforms.uTarget, noise.read.texId);
-    gl.uniform1f(addNoiseProgram.uniforms.blendLevel, 1.0);
-    blit(noise.write.fbo);
-    noise.swap();
+  // Initialize the noise channel.
+  addNoiseProgram.bind();
+  gl.uniform2f(addNoiseProgram.uniforms.texelSize, 1.0 / simWidth, 1.0 / simHeight);
+  gl.uniform1f(addNoiseProgram.uniforms.time, (new Date()).getTime() / 1.e6 % 1);
+  gl.uniform1i(addNoiseProgram.uniforms.uTarget, noise.read.texId);
+  gl.uniform1f(addNoiseProgram.uniforms.blendLevel, 1.0);
+  blit(noise.write.fbo);
+  noise.swap();
 
-    update();
-  });
+  update();
 }
 
 canvas.addEventListener('mousemove', (e) => {

@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "esbuild --bundle --sourcemap --loader:.glsl=text --outfile=dist.js --platform=browser main.js",
+    "dev": "esbuild --bundle --sourcemap --loader:.glsl=text --outfile=dist.js --platform=browser main.js --servedir=."
+  },
+  "dependencies": {
+    "esbuild": "^0.19.3",
+    "typescript": "^5.2.2"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.21"
+  }
+}
